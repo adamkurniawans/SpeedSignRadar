@@ -1,0 +1,56 @@
+[Unit]
+Description=Speed Sign Python Service
+After=network.target
+
+[Service]
+ExecStartPre=/bin/sleep 10
+ExecStart=/usr/bin/python3 /home/tedes/speedsign.py
+WorkingDirectory=/home/tedes
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
+
+
+---------------------------------------
+
+Langkah instalasi
+
+Buat file service:
+
+sudo nano /etc/systemd/system/speedsign.service
+
+
+Paste isi di atas (ganti nama_script.py sesuai nama file Python kamu).
+
+Simpan lalu reload systemd:
+
+sudo systemctl daemon-reload
+
+
+Aktifkan supaya otomatis saat boot:
+
+sudo systemctl enable speedsign.service
+
+nonaktif:
+sudo systemctl disable speedsign.service
+
+
+Jalankan manual untuk uji coba:
+
+sudo systemctl start speedsign.service
+
+MEnghentikan service:
+sudo systemctl stop speedsign.service
+
+
+
+Cek status:
+
+sudo systemctl status speedsign.service
+
+
+Lihat log realtime:
+
+journalctl -u speedsign.service -f
