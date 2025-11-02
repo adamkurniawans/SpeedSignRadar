@@ -29,6 +29,25 @@ W, H = 32, 32  # ukuran panel P10 double atas bawah
 app = Flask(__name__)
 app.config["VIDEO_FOLDER"] = VIDEO_FOLDER
 
+def show_smile():
+    """Tampilkan emot senyum di panel P10 saat startup"""
+    image = Image.new("RGB", (W, H), (0, 0, 0))
+    draw = ImageDraw.Draw(image)
+
+    # Wajah (lingkaran)
+    draw.ellipse((2, 2, W - 3, H - 3), outline=(0, 255, 0), width=2)
+
+    # Mata kiri & kanan
+    draw.ellipse((9, 8, 13, 12), fill=(0, 255, 0))
+    draw.ellipse((19, 8, 23, 12), fill=(0, 255, 0))
+
+    # Mulut (senyum)
+    draw.arc((8, 14, 24, 26), start=20, end=160, fill=(0, 255, 0), width=2)
+
+    # Tampilkan ke panel
+    matrix.SetImage(image)
+
+
 def get_system_timezone():
     try:
         result = subprocess.run(
@@ -409,8 +428,8 @@ def log_speed(speed, with_video=False):
 # GPIO Relay / Lampu Indikator
 
 pin_panel = 26 # pin fisik 37
-pinON = 16 #pin fisik 36
-pinrelay = 21 #pin fisik 40
+pinON = 21 #pin fisik 36
+pinrelay = 16 #pin fisik 40
 GPIO.setmode(GPIO.BCM)
 GPIO.setup(pinON, GPIO.OUT)
 GPIO.output(pinON, GPIO.HIGH) #indikator ON
@@ -437,7 +456,8 @@ options.parallel = 2  #2 panel atas bawah
 options.hardware_mapping = "regular"
 options.row_address_type = 0
 #options.multiplexing = 4  # panel riskul tidak perlu multiplexing
-options.brightness = 20
+options.brightness = 80
+options.gpio_slowdown = 4
 matrix = RGBMatrix(options=options)
 
 # Font
@@ -539,8 +559,9 @@ def speed_loop():
 # Main
 # ==============================
 if __name__ == '__main__':
+    show_smile()          
+    time.sleep(2)  
     Thread(target=speed_loop, daemon=True).start()
     app.run(host='0.0.0.0', port=5001, debug=False)
-
 
 
