@@ -1,0 +1,21 @@
+[Unit]
+Description=Reverse SSH Tunnel to VPS
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=root
+Environment="HOME=/root"
+Environment="AUTOSSH_GATETIME=0"
+ExecStart=/usr/bin/autossh -M 0 -N \
+  -o "ExitOnForwardFailure yes" \
+  -o "ServerAliveInterval 30" \
+  -o "ServerAliveCountMax 3" \
+  -o "StrictHostKeyChecking=no" \
+  -o "UserKnownHostsFile=/root/.ssh/known_hosts" \
+  -R 192.168.11.251:5001:127.0.0.1:5001 root@72.61.140.137 -i /root/.ssh/id_rsa
+Restart=always
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
