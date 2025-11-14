@@ -545,7 +545,7 @@ def speed_loop():
             GPIO.setup(pinrelay, GPIO.OUT)
             GPIO.output(pinrelay, GPIO.LOW)
             relay_on_until = time.time() + record
-        elif current_speed != 0 and (time.time() - last_log_time >= 1):
+        elif current_speed >= speed_limit - 10 and (time.time() - last_log_time >= 1):
             log_speed(current_speed, with_video=False)
             last_log_time = time.time()
 
