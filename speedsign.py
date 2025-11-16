@@ -20,10 +20,10 @@ LOG_FILE = os.path.join(VIDEO_FOLDER, "SAM01_speed_log.json")
 CONFIG_FILE = os.path.join(VIDEO_FOLDER, "config.json")
 os.makedirs(VIDEO_FOLDER, exist_ok=True)
 
-# ========== Tambahan ==========
+# ======= tambahan minimal untuk konsistensi rekaman =======
 current_recording_name = None
 current_recording_until = 0
-# ==============================
+# ==========================================================
 
 FONT_PATH = "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
 W, H = 32, 32  # ukuran panel P10 double atas bawah
@@ -404,63 +404,31 @@ def delayed_delete(video_path, video_name, delay=10):
     Thread(target=delete_task, daemon=True).start()
 
 
-def detect_new_recording(start_time, wait_timeout=6, poll_interval=0.25):
-    """
-    Cari file .mp4 di VIDEO_FOLDER yang dibuat setelah start_time.
-    Tunggu sampai wait_timeout detik. Jika ketemu, kembalikan nama file (basename).
-    """
-    deadline = time.time() + wait_timeout
-
-    while time.time() < deadline:
-        try:
-            candidates = []
-
-            for f in os.listdir(VIDEO_FOLDER):
-                if not f.lower().endswith(".mp4"):
-                    continue
-
-                full = os.path.join(VIDEO_FOLDER, f)
-
-                # ambil mtime dan size
-                try:
-                    mtime = os.path.getmtime(full)
-                    size = os.path.getsize(full)
-                except:
-                    continue
-
-                # file harus muncul setelah start_time dan ukuran > 0
-                if mtime >= start_time - 0.5 and size > 0:
-                    candidates.append((full, mtime))
-
-            if candidates:
-                # pilih file terbaru
-                candidates.sort(key=lambda x: x[1], reverse=True)
-                return os.path.basename(candidates[0][0])
-
-        except:
-            pass
-
-        time.sleep(poll_interval)
-
-    return None
-
-
 def log_speed(speed, with_video=False):
-    global current_recording_name, current_recording_until
-    
+    global current_recording_name, current_recording_until, speed_limit
+
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
 
-    # Jika ini log pertama saat rekaman dimulai
     if with_video:
+        # pakai nama rekaman yang sudah ditetapkan, atau buat fallback
         if current_recording_name:
             video_name = current_recording_name
         else:
-            # fallback jika belum sempat mendeteksi
             video_name = f"SAM01_record_{timestamp}.mp4"
             current_recording_name = video_name
     else:
-        # log selama cooldown memakai nama rekaman yang sama
-        if current_recording_name and time.time() <= current_recording_until:
+        # hanya pakai nama rekaman jika:
+        # 1) masih dalam periode rekaman (waktu belum lewat) AND
+        # 2) kecepatan saat ini >= speed_limit
+        try:
+            current_limit = int(speed_limit)
+        except Exception:
+            current_limit = None
+
+        if (current_recording_name
+                and time.time() <= current_recording_until
+                and current_limit is not None
+                and speed >= current_limit):
             video_name = current_recording_name
         else:
             video_name = "Tidak diRecord/sedang cooldown"
@@ -602,38 +570,36 @@ def speed_loop():
             matrix.SetImage(Image.new("RGB", (W, H), (0, 0, 0)))
 
         # Rekam & log kalau over limit
-        if current_speed >= speed_limit and (time.time() - last_record_time > record):
-            # tandai waktu sebelum memanggil start_recording
-            start_time = time.time()
+        # ambil salinan durasi yang konsisten untuk rekaman ini
+        local_record = int(record)
 
-            # mulai rekaman (tanpa ubah record_camera.py)
+        if current_speed >= speed_limit and (time.time() - last_record_time > local_record):
+            # buat nama file rekaman yang konsisten untuk seluruh periode rekaman/cooldown
+            ts_for_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            recording_name = f"SAM01_record_{ts_for_name}.mp4"
+
+            # simpan nama rekaman dan periode aktifnya (dipakai oleh log_speed)
+            current_recording_name = recording_name
+            current_recording_until = time.time() + local_record
+
+            # aktifkan relay & mulai rekaman
+            GPIO.setup(pinrelay, GPIO.OUT)
+            GPIO.output(pinrelay, GPIO.LOW)
             try:
                 start_recording()
             except Exception as e:
                 print(f"[WARN] start_recording() error: {e}")
 
-            # set periode rekaman aktif
-            current_recording_until = time.time() + record
+            # set waktu terakhir rekam (guard cooldown)
             last_record_time = time.time()
 
-            # deteksi file video yang dibuat ffmpeg
-            detected = detect_new_recording(start_time, wait_timeout=max(5, record))
-
-            if detected:
-                current_recording_name = detected
-            else:
-                # fallback jika deteksi gagal
-                ts_for_name = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-                current_recording_name = f"SAM01_record_{ts_for_name}.mp4"
-
-            # catat log pertama (over limit)
+            # catat log pertama (will use current_recording_name)
             log_speed(current_speed, with_video=True)
 
-            # relay ON
-            GPIO.setup(pinrelay, GPIO.OUT)
-            GPIO.output(pinrelay, GPIO.LOW)
-            relay_on_until = time.time() + record
+            # set waktu matikan relay menggunakan local_record agar konsisten
+            relay_on_until = time.time() + local_record
         elif current_speed >= speed_limit - 10 and (time.time() - last_log_time >= 1):
+            # catat log saat mendekati limit (tanpa video) — log_speed memakai current_recording_name saat masih periode
             log_speed(current_speed, with_video=False)
             last_log_time = time.time()
 
@@ -642,6 +608,7 @@ def speed_loop():
             GPIO.setup(pinrelay, GPIO.IN)
             print(f"[INFO] Rekaman Selesai ")
             relay_on_until = 0
+            # reset penanda rekaman aktif
             current_recording_name = None
             current_recording_until = 0
 
