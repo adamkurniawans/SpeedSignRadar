@@ -310,9 +310,11 @@ def health_check():
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
+    # daftar semua file video di folder
     files = sorted([f for f in os.listdir(VIDEO_FOLDER) if f.endswith(".mp4")], reverse=True)
-    logs = []
 
+    # baca log dari JSON
+    logs = []
     if os.path.exists(LOG_FILE):
         with open(LOG_FILE, "r") as f:
             try:
@@ -322,38 +324,58 @@ def get_data():
 
     data = []
 
-    # Proses semua file video yang ada
+    # -----------------------------
+    # 1) Buat mapping:
+    #    video_name -> list of log entries
+    # -----------------------------
+    video_map = {}
+    for entry in logs:
+        vname = entry.get("video")
+        if not vname:
+            continue
+        if vname not in video_map:
+            video_map[vname] = []
+        video_map[vname].append(entry)
+
+    # -----------------------------
+    # 2) Untuk setiap file video,
+    #    ambil semua log yg cocok
+    # -----------------------------
     for f in files:
-        video_path = os.path.join(VIDEO_FOLDER, f)
         video_url = url_for('get_video', video=f, _external=True)
-        log_entry = next((item for item in logs if item.get("video") == f), None)
+        matches = video_map.get(f, [])
 
-        data.append({
-            "video": f,
-            "videoUrl": video_url,
-            "speed": log_entry.get("speed") if log_entry else None,
-            "timestamp": log_entry.get("timestamp") if log_entry else None
-        })
+        if matches:
+            # video ini punya banyak log — tambahkan semuanya
+            for m in matches:
+                data.append({
+                    "video": f,
+                    "videoUrl": video_url,
+                    "speed": m.get("speed"),
+                    "timestamp": m.get("timestamp")
+                })
+        else:
+            # file video ada, tapi tidak punya log
+            data.append({
+                "video": f,
+                "videoUrl": video_url,
+                "speed": None,
+                "timestamp": None
+            })
 
-        delayed_delete(video_path, f, delay=10)
-
-    # Tambahkan log tanpa video
-    no_video_logs = [item for item in logs if item.get("video") == "Tidak diRecord/sedang cooldown"]
-    for log_entry in no_video_logs:
-        data.append({
-            "video": log_entry.get("video"),
-            "videoUrl": None,
-            "speed": log_entry.get("speed"),
-            "timestamp": log_entry.get("timestamp")
-        })
-
-    # Jika tidak ada file video, tetap jalankan delayed_delete untuk membersihkan log
-    if not files and no_video_logs:
-        print("[INFO] Tidak ada file video, hanya log cooldown")
-        delayed_delete(None, "Tidak diRecord/sedang cooldown", delay=10)
+    # -----------------------------
+    # 3) Tambahkan log tanpa video
+    # -----------------------------
+    for entry in logs:
+        if entry.get("video") == "Tidak diRecord/sedang cooldown":
+            data.append({
+                "video": "Tidak diRecord/sedang cooldown",
+                "videoUrl": None,
+                "speed": entry.get("speed"),
+                "timestamp": entry.get("timestamp")
+            })
 
     return jsonify(data), 200
-
 
 @app.route('/api/config', methods=['GET', 'POST'])
 def config_handler():
